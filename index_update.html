@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peta GeoJSON – Tugas 6 Kapita Selekta</title>
+    <meta name="description" content="Peta interaktif menampilkan data GeoJSON pada OpenStreetMap menggunakan Leaflet.js">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #fafafa;
+            color: #3a3a3a;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        header {
+            background: #ffffff;
+            border-bottom: 1px solid #e5e5e5;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 1000;
+            box-shadow: 0 1px 8px rgba(0, 0, 0, .06);
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 38px; height: 38px;
+            background: linear-gradient(135deg, #6b7280, #9ca3af);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+        }
+        header h1 {
+            font-size: 1.1rem; font-weight: 700;
+            color: #374151;
+            letter-spacing: -0.3px;
+        }
+        .subtitle { font-size: .72rem; color: #9ca3af; margin-top: 1px; font-weight: 500; }
+        .badge {
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            padding: 5px 14px; border-radius: 20px;
+            font-size: .75rem; color: #6b7280; font-weight: 600;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 6px rgba(16, 185, 129, .45);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+
+        /* ── Map ── */
+        #map-wrap { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        /* ── Loading ── */
+        #loader {
+            position: absolute; inset: 0;
+            background: rgba(250, 250, 250, .94);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 9999; backdrop-filter: blur(6px);
+            transition: opacity .5s, visibility .5s;
+        }
+        #loader.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+        .spin {
+            width: 48px; height: 48px;
+            border: 3.5px solid #e5e7eb;
+            border-top-color: #6b7280;
+            border-radius: 50%;
+            animation: sp .85s linear infinite;
+        }
+        @keyframes sp { to { transform: rotate(360deg) } }
+        .spin-text { margin-top: 16px; font-size: .84rem; color: #9ca3af; font-weight: 500; }
+
+        /* ── File-picker ── */
+        #file-pick {
+            position: absolute; inset: 0;
+            background: rgba(250, 250, 250, .97);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 10000; backdrop-filter: blur(8px);
+            text-align: center; padding: 24px;
+        }
+        #file-pick.show { display: flex; }
+        #file-pick h2 { font-size: 1.2rem; color: #374151; margin-bottom: 8px; font-weight: 700; }
+        #file-pick p {
+            color: #9ca3af; font-size: .82rem; max-width: 400px;
+            line-height: 1.65; margin-bottom: 22px;
+        }
+        #file-pick p strong { color: #374151; }
+        #file-pick label {
+            background: #374151;
+            color: #fff; padding: 11px 30px; border-radius: 12px;
+            font-weight: 700; font-size: .88rem; cursor: pointer;
+            box-shadow: 0 4px 16px rgba(55, 65, 81, .2);
+            transition: transform .2s, box-shadow .2s;
+        }
+        #file-pick label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 22px rgba(55, 65, 81, .3);
+            background: #4b5563;
+        }
+        #file-pick input { display: none; }
+
+        /* ── Tombol Ganti File ── */
+        #btn-change {
+            position: absolute; top: 14px; right: 14px;
+            z-index: 900;
+            background: #ffffff;
+            color: #374151; border: 1px solid #d1d5db;
+            padding: 9px 18px; border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: .8rem; font-weight: 600;
+            cursor: pointer;
+            display: none; align-items: center; gap: 7px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+            transition: transform .2s, box-shadow .2s, background .2s;
+        }
+        #btn-change:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+            background: #f9fafb;
+        }
+        #btn-change.show { display: flex; }
+
+        /* ── Legend ── */
+        .legend {
+            position: absolute; bottom: 28px; left: 14px;
+            background: rgba(255, 255, 255, .94);
+            backdrop-filter: blur(10px);
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 14px 18px;
+            z-index: 800; min-width: 195px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .07);
+        }
+        .legend-title {
+            font-size: .72rem; font-weight: 700; color: #6b7280;
+            text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px;
+        }
+        .legend-row {
+            display: flex; align-items: center; gap: 9px;
+            margin-bottom: 7px; font-size: .76rem; color: #4b5563;
+        }
+        .legend-row:last-child { margin-bottom: 0; }
+        .lg-circle { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(0,0,0,.08); flex-shrink: 0; }
+        .lg-line   { width: 20px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+        .lg-rect   { width: 13px; height: 13px; border-radius: 3px; border: 2px solid rgba(0,0,0,.08); flex-shrink: 0; }
+
+        /* ── Leaflet popup (light nature) ── */
+        .leaflet-popup-content-wrapper {
+            background: #ffffff !important;
+            backdrop-filter: blur(10px);
+            border: 1px solid #e5e7eb !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, .1) !important;
+            color: #374151 !important;
+        }
+        .leaflet-popup-tip {
+            background: #ffffff !important;
+            border: 1px solid #e5e7eb !important;
+            border-top: none !important; border-left: none !important;
+        }
+        .leaflet-popup-close-button { color: #9ca3af !important; font-size: 20px !important; }
+        .leaflet-popup-close-button:hover { color: #374151 !important; }
+
+        .pop-title {
+            font-size: .88rem; font-weight: 700; color: #1f2937;
+            margin-bottom: 6px; display: flex; align-items: center; gap: 5px;
+        }
+        .pop-info { font-size: .76rem; color: #6b7280; line-height: 1.65; }
+        .pop-info strong { color: #374151; font-weight: 600; }
+        .pop-tag {
+            display: inline-block;
+            background: #f3f4f6;
+            color: #6b7280; padding: 2px 9px; border-radius: 6px;
+            font-size: .68rem; font-weight: 600; margin-top: 6px;
+        }
+
+        /* ── Leaflet controls ── */
+        .leaflet-control-zoom a {
+            background: #ffffff !important;
+            color: #374151 !important;
+            border-color: #e5e7eb !important;
+        }
+        .leaflet-control-zoom a:hover { background: #f9fafb !important; }
+
+        @media(max-width:600px) {
+            header { padding: 10px 14px; }
+            header h1 { font-size: .92rem; }
+            .badge { display: none; }
+            .legend { bottom: 14px; left: 8px; padding: 10px 14px; min-width: 160px; }
+            #btn-change { top: 10px; right: 10px; padding: 7px 14px; font-size: .74rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+    <div class="header-left">
+        <div class="logo">🌍</div>
+        <div>
+            <h1>Peta GeoJSON – Tugas 6</h1>
+            <div class="subtitle">Kapita Selekta · Agnesia Nadya Tassi</div>
+        </div>
+    </div>
+    <div class="badge"><span class="dot"></span><span id="count">Memuat data…</span></div>
+</header>
+
+<!-- Map -->
+<div id="map-wrap">
+    <!-- Loading -->
+    <div id="loader">
+        <div class="spin"></div>
+        <div class="spin-text">Memuat peta & data GeoJSON…</div>
+    </div>
+
+    <!-- File picker -->
+    <div id="file-pick">
+        <div style="font-size:2.8rem; margin-bottom:14px">🌿</div>
+        <h2>Pilih File GeoJSON</h2>
+        <p>Halaman dibuka langsung dari file system, silakan pilih file
+           <strong>Agnesia_Nadya_Tugas_5_KS.geojson</strong> secara manual.</p>
+        <label for="geojson-input">📂 Pilih File .geojson</label>
+        <input type="file" id="geojson-input" accept=".geojson,.json">
+    </div>
+
+    <!-- Tombol Ganti File -->
+    <button id="btn-change" title="Kembali ke menu pilih file">📂 Ganti File</button>
+
+    <div id="map"></div>
+
+    <!-- Legend -->
+    <div class="legend">
+        <div class="legend-title">Landform</div>
+        <div class="legend-row"><div class="lg-circle" style="background:#e65100"></div>Peak (puncak)</div>
+        <div class="legend-row"><div class="lg-circle" style="background:#c62828"></div>Cliff (tebing)</div>
+        <div class="legend-row"><div class="lg-circle" style="background:#0277bd"></div>Valley (lembah)</div>
+        <div class="legend-row"><div class="lg-line"   style="background:#8d6e63"></div>Ridge (punggung bukit)</div>
+        <div class="legend-row"><div class="lg-line"   style="background:#c62828"></div>Cliff line (garis tebing)</div>
+
+        <div class="legend-title" style="margin-top:12px">Land Cover</div>
+        <div class="legend-row"><div class="lg-rect" style="background:rgba(56,142,60,.5)"></div>Forest (hutan)</div>
+        <div class="legend-row"><div class="lg-rect" style="background:rgba(124,179,66,.5)"></div>Grassland (padang rumput)</div>
+        <div class="legend-row"><div class="lg-rect" style="background:rgba(85,139,47,.5)"></div>Wood (semak)</div>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- Data GeoJSON (auto-load) -->
+<script src="data.js"></script>
+
+<script>
+// ─── Peta ───
+const map = L.map('map', { zoomControl: true }).setView([51.45, -0.35], 10);
+
+// OpenStreetMap standar — menampilkan daratan hijau & laut biru alami
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+}).addTo(map);
+
+// ─── Helpers ───
+function displayName(p) {
+    if (p.name) return p.name;
+    if (p.nama) return p.nama;
+    if (p.NAME) return p.NAME;
+    const parts = [];
+    if (p.natural) parts.push(cap(p.natural));
+    if (p.landuse) parts.push(cap(p.landuse));
+    if (parts.length === 0) parts.push('Feature');
+    parts.push('#' + (p.osm_id || ''));
+    return parts.join(' ');
+}
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+// Warna titik – nuansa alam
+function pointColor(p) {
+    const n = (p.natural || '').toLowerCase();
+    if (n === 'peak')   return '#e65100'; // oranye gunung
+    if (n === 'cliff')  return '#c62828'; // merah tebing
+    if (n === 'valley') return '#0277bd'; // biru lembah
+    if (n === 'ridge')  return '#8d6e63'; // coklat punggung bukit
+    return '#6a1b9a'; // ungu default
+}
+
+// Warna polygon – hijau alam
+function polyColor(p) {
+    const n = (p.natural || '').toLowerCase();
+    const l = (p.landuse || '').toLowerCase();
+    if (l === 'forest' || n === 'wood') return '#388e3c';
+    if (n === 'grassland') return '#7cb342';
+    return '#558b2f';
+}
+
+// ─── State ───
+let currentLayer = null;
+
+// ─── Render GeoJSON ───
+function renderGeoJSON(data) {
+    if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
+
+    let count = 0;
+    currentLayer = L.geoJSON(data, {
+        pointToLayer(f, ll) {
+            return L.circleMarker(ll, {
+                radius: 6,
+                fillColor: pointColor(f.properties),
+                color: '#fff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: .88
+            });
+        },
+        style(f) {
+            const t = f.geometry.type;
+            if (t === 'LineString' || t === 'MultiLineString')
+                return { color: '#8d6e63', weight: 2.5, opacity: .7, dashArray: '6,4' };
+            const c = polyColor(f.properties);
+            return { fillColor: c, color: c, weight: 1.5, opacity: .65, fillOpacity: .3 };
+        },
+        onEachFeature(f, lyr) {
+            count++;
+            const p = f.properties, t = f.geometry.type;
+            const icon = t === 'Point' ? '📍' : t.includes('Line') ? '〰️' : '🌳';
+            lyr.bindPopup(`
+                <div style="padding:2px">
+                    <div class="pop-title">${icon} ${displayName(p)}</div>
+                    <div class="pop-info">
+                        <strong>OSM ID:</strong> ${p.osm_id || '-'}<br>
+                        <strong>Tipe:</strong> ${p.osm_type || '-'}<br>
+                        ${p.natural ? '<strong>Natural:</strong> ' + p.natural + '<br>' : ''}
+                        ${p.landuse ? '<strong>Landuse:</strong> ' + p.landuse + '<br>' : ''}
+                        <strong>Geometri:</strong> ${t}
+                    </div>
+                    <span class="pop-tag">${p.natural || p.landuse || t}</span>
+                </div>`, { maxWidth: 280 });
+        }
+    }).addTo(map);
+
+    map.fitBounds(currentLayer.getBounds(), { padding: [30, 30] });
+    document.getElementById('count').textContent = count + ' fitur dimuat';
+    document.getElementById('loader').classList.add('hide');
+    document.getElementById('file-pick').classList.remove('show');
+    document.getElementById('btn-change').classList.add('show');
+}
+
+// ─── Load: pakai data.js (langsung), fallback fetch, lalu file picker ───
+if (typeof geojsonData !== 'undefined') {
+    // data.js berhasil dimuat → langsung render
+    renderGeoJSON(geojsonData);
+} else {
+    // Fallback: coba fetch file .geojson
+    fetch('Agnesia_Nadya_Tugas_5_KS.geojson')
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(renderGeoJSON)
+        .catch(() => {
+            document.getElementById('loader').classList.add('hide');
+            document.getElementById('file-pick').classList.add('show');
+        });
+}
+
+// ─── File picker ───
+document.getElementById('geojson-input').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('file-pick').classList.remove('show');
+    document.getElementById('loader').classList.remove('hide');
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+        try {
+            renderGeoJSON(JSON.parse(ev.target.result));
+        } catch (err) {
+            alert('Gagal membaca file GeoJSON: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+});
+
+// ─── Tombol Ganti File ───
+document.getElementById('btn-change').addEventListener('click', function() {
+    if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
+    map.setView([51.45, -0.35], 10);
+    document.getElementById('geojson-input').value = '';
+    document.getElementById('btn-change').classList.remove('show');
+    document.getElementById('count').textContent = 'Memuat data…';
+    document.getElementById('file-pick').classList.add('show');
+});
+</script>
+</body>
+</html>
